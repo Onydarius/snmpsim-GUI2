@@ -1,0 +1,49 @@
+{
+    "Dispositivo Vac\u00edo": {
+        "content": "",
+        "meta": {}
+    },
+    "Router Cisco (Demo)": {
+        "content": "1.3.6.1.2.1.1.1.0|4|Cisco IOS Software, C2900 Software\n1.3.6.1.2.1.1.5.0|4|Router_Main_01\n1.3.6.1.2.1.1.3.0|67|1000",
+        "meta": {
+            "1.3.6.1.2.1.1.1.0": {
+                "name": "Descripci\u00f3n Sistema",
+                "ui_type": "Text Entry"
+            },
+            "1.3.6.1.2.1.1.5.0": {
+                "name": "Nombre Host",
+                "ui_type": "Text Entry"
+            },
+            "1.3.6.1.2.1.1.3.0": {
+                "name": "Uptime",
+                "ui_type": "Text Entry"
+            }
+        }
+    },
+    "Servidor Windows": {
+        "content": "1.3.6.1.2.1.1.1.0|4|Windows Server 2019\n1.3.6.1.2.1.1.5.0|4|SRV-AD-01\n1.3.6.1.4.1.9.9.13.1.3.1.3.1|2|45",
+        "meta": {
+            "1.3.6.1.4.1.9.9.13.1.3.1.3.1": {
+                "name": "Temperatura CPU",
+                "ui_type": "Slider"
+            }
+        }
+    },
+    "Site": {
+        "content": "1.3.6.1.2.1.1.5.0|4|Cerro Blanco\n34|65|323\n1.3.6.1.4.1.55555.1.2.0|2|0\n1.3.6.1.4.1.55555.1.3.0|67|34.9\n1.3.6.1.4.1.55555.1.4.0|2|1\n1.3.6.1.4.1.55555.1.5.0|66|45\n1.3.6.1.4.1.55555.1.6.0|2|2",
+        "meta": {
+            "1.3.6.1.2.1.1.5.0": {
+                "name": "Device Name",
+                "ui_type": "Text Entry"
+            },
+            "34": {
+                "name": "Temperatura",
+                "ui_type": "Text Entry"
+            },
+            "1.3.6.1.4.1.55555.1.3.0": {
+                "name": "",
+                "ui_type": "Toggle"
+            }
+        }
+    }
+}

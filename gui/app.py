@@ -1,172 +1,136 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
-from pysnmp.proto import rfc1902
+from tkinter import ttk
+import os
+import queue  # Necesario para evitar que la interfaz se congele
 
-from .models import SimulatedDevice
-from .snmpsim_runner import SNMPSimRunner
+# Importar nuestros componentes modulares
 from gui.topbar import TopBar
-from gui.console import Console
+from gui.sidebar import DeviceSidebar
+from gui.editor import DeviceEditor
+from gui.snmpsim_runner import SNMPSimRunner
 
-class SNMPSimGUI(tk.Tk):
+
+class SNMPSimApp(tk.Tk):
 
     def __init__(self):
         super().__init__()
+        self.title("SNMPSim Manager Pro")
+        self.geometry("1200x700")
 
-        self.title("SNMPSim Device Manager")
-        self.geometry("1000x600")
+        # 1. Configurar cola de mensajes (Thread-Safe Log)
+        self.log_queue = queue.Queue()
 
-        self.devices = {}
-        self.current_device = None
-        self.topbar = None
+        # 2. Inicializar el Runner
+        # Pasamos self.queue_log como la función que recibirá los textos
+        self.sim_runner = SNMPSimRunner(on_output=self.queue_log)
 
-        self._build_ui()
+        # 3. Construir Interfaz
+        self._build_layout()
+        
+        # 4. Iniciar el monitor de logs (revisa la cola cada 100ms)
+        self.check_log_queue()
 
-        self.sim_runner = SNMPSimRunner(
-            on_output=self.console.write
+        # 5. Cargar directorio inicial si existe
+        initial_dir = self.topbar.get_data_dir()
+        if initial_dir and os.path.exists(initial_dir):
+            self.sidebar.set_directory(initial_dir)
+
+    def _build_layout(self):
+        # A. TopBar
+        self.topbar = TopBar(
+            self,
+            on_start=self.start_simulation,
+            on_stop=self.stop_simulation,
+            on_dir_change=self.on_directory_changed
         )
-
-    # ---------------- UI ---------------- #
-
-    def _build_ui(self):
-        self.topbar = TopBar(self, self.start_sim, self.stop_sim)
         self.topbar.pack(fill="x", pady=2)
 
+        separator = ttk.Separator(self, orient='horizontal')
+        separator.pack(side="top", fill="x", padx=10, pady=5)
 
-        main = ttk.Frame(self)
-        main.pack(fill="both", expand=True)
+        # B. Paneles Divisores
+        self.paned = ttk.PanedWindow(self, orient="horizontal")
+        self.paned.pack(fill="both", expand=True)
 
-        self._build_device_list(main)
-        self._build_device_editor(main)
+        # C. Sidebar
+        self.sidebar = DeviceSidebar(self.paned, on_selection_change=self.on_file_selected)
+        self.paned.add(self.sidebar, weight=1)
 
-        self.console = Console(self)
-        self.console.pack(fill="both", expand=True)
+        # D. Editor
+        self.editor = DeviceEditor(self.paned,
+                                   on_file_renamed=self.on_file_renamed,
+                                   on_template_saved=self.on_template_saved)
+        self.paned.add(self.editor, weight=4)
 
-    def _build_device_list(self, parent):
-        frame = ttk.Frame(parent, width=250)
-        frame.pack(side="left", fill="y")
+        # E. Consola de Salida
+        self.console_frame = ttk.Frame(self, height=150)
+        self.console_frame.pack(fill="x", side="bottom")
+        
+        # Widget Text para logs (fondo oscuro, letra verde)
+        self.console_text = tk.Text(self.console_frame, height=8, bg="#1e1e1e", fg="#00ff00", font=("Consolas", 9))
+        self.console_text.pack(side="left", fill="both", expand=True)
+        
+        # Scrollbar para la consola
+        scroll = ttk.Scrollbar(self.console_frame, command=self.console_text.yview)
+        scroll.pack(side="right", fill="y")
+        self.console_text.config(yscrollcommand=scroll.set)
 
-        self.device_tree = ttk.Treeview(frame)
-        self.device_tree.pack(fill="both", expand=True)
-        self.device_tree.bind("<<TreeviewSelect>>", self.on_select_device)
+    # ---------------- LOGGING SEGURO (THREAD-SAFE) ---------------- #
 
-        ttk.Button(frame, text="+ Add Device", command=self.add_device).pack(fill="x")
-        ttk.Button(frame, text="✖ Remove", command=self.remove_device).pack(fill="x")
+    def queue_log(self, message):
+        """Este método lo llama el hilo secundario (Runner). Solo mete datos en la cola."""
+        self.log_queue.put(message)
 
-    def _build_device_editor(self, parent):
-        frame = ttk.Frame(parent)
-        frame.pack(side="right", fill="both", expand=True)
+    def check_log_queue(self):
+        """Este método lo ejecuta la GUI principal. Saca datos de la cola y pinta."""
+        while not self.log_queue.empty():
+            try:
+                msg = self.log_queue.get_nowait()
+                self.console_text.insert(tk.END, f"{msg}\n")
+                self.console_text.see(tk.END)  # Auto-scroll al final
+            except queue.Empty:
+                pass
+        
+        # Se vuelve a llamar a sí mismo en 100ms
+        self.after(100, self.check_log_queue)
 
-        tabs = ttk.Notebook(frame)
-        tabs.pack(fill="both", expand=True)
+    # ---------------- ACCIONES DE LA APP ---------------- #
 
-        self.general_tab = ttk.Frame(tabs)
-        self.oid_tab = ttk.Frame(tabs)
-
-        tabs.add(self.general_tab, text="General")
-        tabs.add(self.oid_tab, text="OIDs")
-
-        self._build_general_tab()
-        self._build_oid_tab()
-
-    # ---------------- General Tab ---------------- #
-
-    def _build_general_tab(self):
-        f = self.general_tab
-
-        ttk.Label(f, text="Name").grid(row=0, column=0)
-        self.name_entry = ttk.Entry(f)
-        self.name_entry.grid(row=0, column=1)
-
-        ttk.Label(f, text="Community").grid(row=1, column=0)
-        self.community_entry = ttk.Entry(f)
-        self.community_entry.grid(row=1, column=1)
-
-        ttk.Label(f, text="SNMP Version").grid(row=2, column=0)
-        self.version_combo = ttk.Combobox(f, values=["v1", "v2c"])
-        self.version_combo.grid(row=2, column=1)
-
-        ttk.Button(f, text="Save", command=self.save_general).grid(row=3, column=1)
-
-    # ---------------- OID Tab ---------------- #
-
-    def _build_oid_tab(self):
-        f = self.oid_tab
-
-        self.oid_table = ttk.Treeview(
-            f, columns=("oid", "type", "value"), show="headings"
-        )
-        for c in ("oid", "type", "value"):
-            self.oid_table.heading(c, text=c)
-
-        self.oid_table.pack(fill="both", expand=True)
-
-        controls = ttk.Frame(f)
-        controls.pack(fill="x")
-
-        ttk.Button(controls, text="+ Add OID", command=self.add_oid).pack(side="left")
-        ttk.Button(controls, text="Apply", command=self.apply_oids).pack(side="right")
-
-    # ---------------- Actions ---------------- #
-
-    def start_sim(self):
+    def start_simulation(self):
         endpoint = self.topbar.get_endpoint()
         data_dir = self.topbar.get_data_dir()
-        self.console.clear()
+        
+        self.console_text.delete(1.0, tk.END)  # Limpiar consola
+        self.console_text.insert(tk.END, f"--- PREPARANDO SIMULACIÓN ---\n")
+        
+        self.topbar.set_running(True)
         self.sim_runner.start(endpoint, data_dir)
-        self.topbar.set_running(True)   
 
-    def stop_sim(self):
-        self.sim_runner.stop()
+    def stop_simulation(self):
         self.topbar.set_running(False)
+        self.sim_runner.stop()
 
-    def add_device(self):
-        dev = SimulatedDevice()
-        self.devices[dev.id] = dev
-        self.device_tree.insert("", "end", dev.id, text=dev.name)
+    def on_directory_changed(self, new_path):
+        if hasattr(self, 'sidebar') and self.sidebar:
+            self.sidebar.set_directory(new_path)
 
-    def remove_device(self):
-        sel = self.device_tree.selection()
-        if not sel:
-            return
-        dev = self.devices.pop(sel[0])
-        self.device_tree.delete(sel[0])
+    def on_file_selected(self, file_path):
+        self.editor.load_file(file_path)
 
-    def on_select_device(self, _):
-        sel = self.device_tree.selection()
-        if not sel:
-            return
-        self.current_device = self.devices[sel[0]]
-        self.load_device()
+    def on_file_renamed(self, new_path):
+        """Si cambian la comunidad, actualizamos el sidebar."""
+        self.sidebar.refresh()
+        new_filename = os.path.basename(new_path)
+        if self.sidebar.tree.exists(new_filename):
+            self.sidebar.tree.selection_set(new_filename)
+            self.sidebar.tree.see(new_filename)
 
-    def load_device(self):
-        d = self.current_device
-        self.name_entry.delete(0, "end")
-        self.name_entry.insert(0, d.name)
-        self.community_entry.delete(0, "end")
-        self.community_entry.insert(0, d.community)
-        self.version_combo.set(d.version)
+    def on_template_saved(self):
+        """Si guardan plantilla, recargamos menú del sidebar."""
+        if hasattr(self.sidebar, 'reload_templates'):
+            self.sidebar.reload_templates()
 
-        for i in self.oid_table.get_children():
-            self.oid_table.delete(i)
 
-        for oid, val in d.oids.items():
-            self.oid_table.insert("", "end", values=(oid, type(val).__name__, val))
-
-    def save_general(self):
-        d = self.current_device
-        d.name = self.name_entry.get()
-        d.community = self.community_entry.get()
-        d.version = self.version_combo.get()
-        self.device_tree.item(d.id, text=d.name)
-
-    def add_oid(self):
-        self.oid_table.insert("", "end", values=("1.3.6.1.x.x", "Integer32", 0))
-
-    def apply_oids(self):
-        d = self.current_device
-        d.oids.clear()
-
-        for row in self.oid_table.get_children():
-            oid, t, val = self.oid_table.item(row)["values"]
-            snmp_val = rfc1902.Integer32(int(val))
-            d.oids[oid] = snmp_val
+if __name__ == "__main__":
+    app = SNMPSimApp()
+    app.mainloop()

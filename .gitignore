@@ -1,0 +1,18 @@
+# Python temporales
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Entornos virtuales
+venv/
+env/
+
+# SnmpSim temporales (Índices que se crean solos)
+*.dbm
+runtime/*
+!runtime/.gitkeep
+
+# Ejecutables generados
+dist/
+build/
+*.spec
