@@ -29,7 +29,7 @@ A robust tool with a modern graphical interface designed to manage and run SNMP 
 ### Steps
 1. **Clone the repository:**
    ```bash
-   git clone [https://github.com/Onydarius/snmpsim-gui2.git](https://github.com/Onydarius/snmpsim-gui2.git)
+   git clone https://github.com/Onydarius/snmpsim-gui2.git
    cd snmpsim-gui2
    ```
 2. **Install dependencies:**
